@@ -1,5 +1,6 @@
 """Offline tests: no API key or internet needed. Run:  python tests/test_offline.py"""
-import json, os, sys, tempfile
+import json
+import os, os, sys, tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,9 +37,14 @@ def call(cid, name, args):
 
 
 def use(client):
+    """Make the agent talk to a scripted fake model: the key pool is told to hand out this client for every key."""
+    os.environ["GEMINI_API_KEY"] = "test-key"            # the pool needs at least one key; the fake client never uses it
+    app.PROVIDER, app.MODEL, app.FALLBACKS = "gemini", "gemini-test", []      # keep the tests offline
+    for state in (app._clients, app._cooldown, app._cooldown_kind, app._calls):
+        state.clear()
+    app._client_for = lambda ep, single=False: client
     app._client = client
     app.get_client = lambda: client
-    app.FALLBACKS = []          # keep the tests offline: never reach the real fallback providers
 
 
 def test_sizing_matches_pdf_example():

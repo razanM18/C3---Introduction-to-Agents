@@ -4,8 +4,18 @@ Run:  python app.py   (needs .env with your API key)
 
 
 import os, re, json, math, time, datetime
+from collections import deque, namedtuple
 from pathlib import Path
 from dotenv import load_dotenv
+
+try:                                   # only needed when a Space runs on ZeroGPU hardware; harmless elsewhere
+    import spaces
+
+    @spaces.GPU
+    def _gpu_placeholder():
+        return None
+except Exception:
+    pass
 
 try:
     BASE_DIR = Path(__file__).resolve().parent      # running as app.py
@@ -106,58 +116,213 @@ def _parse_fallbacks(text):
 
 
 FALLBACKS = _parse_fallbacks(os.getenv("LLM_FALLBACKS", ""))
-_fallback_clients = {}
+# ---------------------------------------------------------------- KEY POOL (several keys, cooldowns, friendly busy message)
+RPM_LIMIT = int(os.getenv("RPM_LIMIT", "0"))                  # requests per minute per key and model; 0 = off. Free Gemini often allows 5.
+QUOTA_MAX_WAIT = float(os.getenv("QUOTA_MAX_WAIT", "8"))      # longest pause (seconds) before a reply while a quota window reopens
+MIN_QUOTA_COOLDOWN, MAX_QUOTA_COOLDOWN, DAILY_COOLDOWN = 15, 120, 3 * 3600
+
+Endpoint = namedtuple("Endpoint", "provider model idx key")   # one key on one model: quotas are counted per project and model
+Endpoint.id = property(lambda self: (self.provider, self.model, self.idx))
+Endpoint.label = property(lambda self: f"{self.provider}#{self.idx + 1}:{self.model}")   # never contains the key itself
+
+_clock, _sleep = time.time, time.sleep      # indirection so the tests can run on a fake clock
+_clients = {}       # (provider, key) -> OpenAI client
+_cooldown = {}      # endpoint id -> time when it may be used again
+_cooldown_kind = {} # endpoint id -> why it is resting: quota / auth / missing / outage
+_calls = {}         # endpoint id -> timestamps of recent requests (for RPM_LIMIT)
 
 
-def _fallback_client(name):
-    if name not in _fallback_clients:
-        cfg = PROVIDERS[name]
-        key = provider_key(cfg) if cfg["key_name"] else "ollama"
-        if not key:
-            _fallback_clients[name] = None
-        else:
-            from openai import OpenAI
-            _fallback_clients[name] = OpenAI(api_key=key, base_url=cfg["base_url"], timeout=25, max_retries=1)
-    return _fallback_clients[name]
+class QuotaBusy(Exception):
+    """Every configured key is rate-limited right now; `seconds` is how long until the first one reopens."""
+    def __init__(self, seconds):
+        self.seconds = max(1, int(math.ceil(seconds)))
+        super().__init__(f"all keys are rate-limited; the first one reopens in about {self.seconds}s")
 
 
-_cooldown = {}   # (provider, model) -> time until which it is tried last after a quota/auth/outage error
+def provider_keys(cfg):
+    """Every API key configured for a provider entry: its main variable, its alternative names, and a comma-separated
+    plural variable (GEMINI_API_KEY -> GEMINI_API_KEYS). Duplicates are dropped."""
+    if not cfg["key_name"]:
+        return ["ollama"]                       # Ollama needs no real key
+    keys = []
+    names = [cfg["key_name"]] + cfg.get("alt_key_names", [])
+    names += [f"{cfg['key_name']}_{n}" for n in range(2, 10)]          # GEMINI_API_KEY_2 ... GEMINI_API_KEY_9
+    for name in names:
+        for raw in (get_secret(name), get_secret(name + "S")):
+            for key in (raw or "").split(","):
+                key = key.strip()
+                if key and key not in keys:
+                    keys.append(key)
+    return keys
 
 
-def _cool_down(key, exc):
-    code = getattr(exc, "status_code", None)
-    text = str(exc).lower()
-    daily = "per day" in text or "tpd" in text or "credit" in text or "quota" in text
-    _cooldown[key] = time.time() + (60 if code and code >= 500 else 10800 if daily else 90)   # a daily limit will not clear for hours
+def _endpoints():
+    """The main provider first, then the fallbacks, each expanded to one endpoint per key."""
+    seen, same_key, out = set(), set(), []
+    pairs = [(PROVIDER, MODEL)] + [(n, m or PROVIDERS[n]["default_model"]) for n, m in FALLBACKS]
+    for name, model in pairs:
+        for idx, key in enumerate(provider_keys(PROVIDERS[name])):
+            ep = Endpoint(name, model, idx, key)
+            # The same key on the same model and server counts once, however many provider names list it
+            # (for example the old gemini2 / gemini3 names next to the pool's own GEMINI_API_KEY_2 / _3).
+            identity = (PROVIDERS[name]["base_url"], key, model)
+            if ep.id not in seen and identity not in same_key:
+                seen.add(ep.id)
+                same_key.add(identity)
+                out.append(ep)
+    return out
 
 
-def chat(**kwargs):
-    """chat.completions.create on the main provider; if it fails (rate limit, quota, outage), try each fallback in order.
-    Models that failed recently are tried last (not skipped), so a model that has recovered is never locked out.
-    Free tiers count quota per model, so the same provider can be listed with several models."""
-    candidates = [(PROVIDER, MODEL)] + [(n, m or PROVIDERS[n]["default_model"]) for n, m in FALLBACKS]
-    now = time.time()
-    ordered = ([c for c in candidates if _cooldown.get(c, 0) <= now] +
-               sorted([c for c in candidates if _cooldown.get(c, 0) > now], key=lambda c: _cooldown[c]))
-    first_error = None
-    for name, model in ordered:
-        client = get_client() if (name, model) == (PROVIDER, MODEL) else _fallback_client(name)
-        if client is None:          # no API key for this provider
-            continue
-        try:
+def _client_for(ep, single):
+    cache_key = (ep.provider, ep.key)
+    if cache_key not in _clients:
+        from openai import OpenAI
+        _clients[cache_key] = OpenAI(api_key=ep.key, base_url=PROVIDERS[ep.provider]["base_url"], timeout=25,
+                                     max_retries=2 if single else 0)   # with several keys, move on at once instead of retrying
+    return _clients[cache_key]
+
+
+def _retry_seconds(exc):
+    """How long the provider says to wait (Gemini puts it in the message; others use the Retry-After header)."""
+    text = str(exc)
+    m = re.search(r"retry in ([\d.]+)\s*(ms|s)\b", text, re.I)
+    if m:
+        value = float(m.group(1))
+        return value / 1000 if m.group(2).lower() == "ms" else value
+    m = re.search(r"retryDelay['\"]?\s*:\s*['\"]?([\d.]+)s", text)
+    if m:
+        return float(m.group(1))
+    try:
+        return float(getattr(getattr(exc, "response", None), "headers", {}).get("retry-after", 0))
+    except Exception:
+        return 0.0
+
+
+def _error_kind(exc):
+    code, low = getattr(exc, "status_code", None), str(exc).lower()
+    if code == 429 or "resource_exhausted" in low or "rate limit" in low or "quota" in low:
+        return "quota"
+    if code in (401, 403) or "api key not valid" in low or "invalid api key" in low:
+        return "auth"
+    if code == 404 or "is not found" in low or "model_not_found" in low:
+        return "missing"
+    if (code and code >= 500) or type(exc).__name__ in ("APITimeoutError", "APIConnectionError", "TimeoutError", "ConnectionError"):
+        return "outage"
+    return "other"          # for example a 400 about a request option: no cooldown, the next endpoint may accept it
+
+
+def _cooldown_seconds(kind, exc):
+    if kind == "quota":
+        if re.search(r"per ?day|\btpd\b", str(exc), re.I):
+            return DAILY_COOLDOWN                    # a daily limit will not clear for hours
+        return min(max(_retry_seconds(exc), MIN_QUOTA_COOLDOWN), MAX_QUOTA_COOLDOWN)
+    return {"auth": 3600, "missing": 600, "outage": 30}.get(kind, 0)
+
+
+def _ready_at(ep, now, reserve=0):
+    """When this endpoint may be used again: its cooldown, or the moment its per-minute window has room."""
+    t = _cooldown.get(ep.id, 0.0)
+    if RPM_LIMIT:
+        q = _calls.setdefault(ep.id, deque())
+        while q and now - q[0] >= 60:
+            q.popleft()
+        if len(q) >= max(RPM_LIMIT - reserve, 1):
+            t = max(t, q[0] + 60)
+    return t
+
+
+def _blocked_by_quota(ep, now):
+    """True when the endpoint is only waiting for a rate-limit window (not a bad key, a missing model or an outage)."""
+    kind = _cooldown_kind.get(ep.id) if _cooldown.get(ep.id, 0.0) > now else None
+    return kind in (None, "quota")
+
+
+def quota_status():
+    """One line for the logs, e.g. '2 of 3 keys ready, next one frees up in 12s'. Never shows a key."""
+    now, eps = _clock(), _endpoints()
+    resting = [_ready_at(e, now) - now for e in eps if _ready_at(e, now) > now]
+    line = f"{len(eps) - len(resting)} of {len(eps)} keys ready"
+    return line + (f", next one frees up in {min(resting):.0f}s" if resting and len(resting) == len(eps) else "")
+
+
+def chat(optional=False, **kwargs):
+    """chat.completions.create with a pool of keys.
+    - Tries the main provider's keys first, then the fallbacks; a key that hit its limit rests until the provider says it reopens.
+    - If every key is resting but one reopens within QUOTA_MAX_WAIT seconds, waits for it; otherwise raises QuotaBusy.
+    - optional=True is for helper calls (router, reflection, language fix): they never wait, they skip when quota is tight,
+      and with RPM_LIMIT they leave room for the main reply."""
+    eps = _endpoints()
+    if not eps:
+        raise RuntimeError("No LLM provider is configured: add an API key to .env")
+    reserve, budget, first_error, tried = (2 if optional else 0), (0.0 if optional else QUOTA_MAX_WAIT), None, set()
+    for _round in range(6):
+        now = _clock()
+        for ep in [e for e in eps if e.id not in tried and _ready_at(e, now, reserve) <= now]:
+            tried.add(ep.id)
             if first_error is not None:
-                trace("fallback", f"trying {name}:{model}")
-            resp = client.chat.completions.create(model=model, **kwargs)
-            _cooldown.pop((name, model), None)
-            return resp
-        except Exception as exc:
-            first_error = first_error or exc
-            _cool_down((name, model), exc)
-            trace("fallback", f"{name}:{model} failed ({type(exc).__name__})")
-    raise first_error or RuntimeError("No LLM provider is configured: add an API key to .env")
+                trace("keys", f"trying {ep.label}")
+            _calls.setdefault(ep.id, deque()).append(_clock())
+            try:
+                resp = _client_for(ep, single=len(eps) == 1).chat.completions.create(model=ep.model, **kwargs)
+                _cooldown.pop(ep.id, None)
+                return resp
+            except Exception as exc:
+                first_error = first_error or exc
+                kind = _error_kind(exc)
+                seconds = _cooldown_seconds(kind, exc)
+                if seconds:
+                    _cooldown[ep.id], _cooldown_kind[ep.id] = _clock() + seconds, kind
+                trace("keys", f"{ep.label} failed ({kind}, {type(exc).__name__})"
+                              + (f"; resting {seconds:.0f}s" if seconds else "") + f". {quota_status()}")
+        now = _clock()
+        waits = [_ready_at(e, now, reserve) - now for e in eps
+                 if _ready_at(e, now, reserve) > now and _blocked_by_quota(e, now)]
+        if not waits:                        # nothing is merely rate-limited: a real error (bad key, bad request, outage)
+            raise first_error or RuntimeError("No LLM provider is available")
+        soonest = min(waits)
+        if soonest > budget:
+            raise QuotaBusy(soonest)
+        trace("keys", f"all keys busy; waiting {soonest:.1f}s for one to reopen")
+        _sleep(soonest + 0.2)
+        budget -= soonest
+        tried.clear()
+    raise QuotaBusy(MIN_QUOTA_COOLDOWN)
+
+
+BUSY_TEXT = {
+    "english": ("I'm getting a lot of questions at the moment. Please send your message again in about {when}, "
+                "or email hello@cedarsun-energy.example and the team will reply."),
+    "french": ("Je reçois beaucoup de questions en ce moment. Pouvez-vous renvoyer votre message dans environ {when} ? "
+               "Vous pouvez aussi écrire à hello@cedarsun-energy.example."),
+    "arabic": ("عندي أسئلة كتير هلأ. ابعتلي رسالتك مرة تانية بعد حوالي {when}، "
+               "أو راسل الفريق على hello@cedarsun-energy.example."),
+    "arabizi": ("3andi ktir as2ile hala2. Ib3atli resaltak marra tenye ba3d hawali {when}, "
+                "aw ba3at email la hello@cedarsun-energy.example."),
+}
+WAIT_UNITS = {   # seconds, minutes, hours-or-more
+    "english": ("{n} seconds", "{n} minutes", "a few hours"),
+    "french": ("{n} secondes", "{n} minutes", "quelques heures"),
+    "arabic": ("{n} ثانية", "{n} دقيقة", "كم ساعة"),
+    "arabizi": ("{n} sanye", "{n} d2i2a", "kam sa3a"),
+}
+
+
+def busy_message(message, history, seconds):
+    """The 'too many requests' reply, in the customer's language, with an honest wait time."""
+    lang = expected_language(message, history)
+    sec_unit, min_unit, long_unit = WAIT_UNITS[lang]
+    if seconds >= 3600:
+        when = long_unit
+    elif seconds >= 90:
+        when = min_unit.format(n=math.ceil(seconds / 60))
+    else:
+        when = sec_unit.format(n=int(math.ceil(seconds / 5.0) * 5))
+    return BUSY_TEXT[lang].format(when=when)
+
 
 
 trace("config", f"provider={PROVIDER} model={MODEL} reflection={REFLECTION_ENABLED} router_llm={ROUTER_USE_LLM}")
+trace("keys", f"{len(_endpoints())} key/model endpoint(s): " + ", ".join(e.label for e in _endpoints()) + f"; RPM_LIMIT={RPM_LIMIT or 'off'}")
 
 
 def load_knowledge():
@@ -567,7 +732,7 @@ def route_llm(message, history):
     last_assistant = next((m["content"] for m in reversed(history) if m["role"] == "assistant"), "")
     user = f"Advisor's previous message: {last_assistant[:400]!r}\nCustomer's latest message: {message!r}"
     resp = chat(
-        temperature=0,
+        optional=True, temperature=0,
         messages=[{"role": "system", "content": ROUTER_PROMPT}, {"role": "user", "content": user}])
     text = (resp.choices[0].message.content or "").lower()
     found = [i for i in INTENTS if re.search(rf"\b{i}\b", text)]
@@ -737,7 +902,7 @@ def enforce_language(reply, message, history):
         return reply
     trace("language", f"reply was {got} but the customer wrote {want}; rewriting")
     try:
-        resp = chat(temperature=0, messages=[
+        resp = chat(optional=True, temperature=0, messages=[
             {"role": "system", "content": f"Rewrite the message below in {LANGUAGE_NAMES[want]}. Keep the meaning, tone, numbers and "
                                           f"length exactly. Return only the rewritten message."},
             {"role": "user", "content": reply}])
@@ -768,6 +933,8 @@ def run_agent(user_message, history=None):
             extra["tool_choice"] = {"type": "function", "function": {"name": "estimate_system_size"}}
         try:
             resp = chat(messages=messages, tools=tools, temperature=AGENT_TEMPERATURE, **extra)
+        except QuotaBusy:
+            raise
         except Exception:
             if not extra:
                 raise
@@ -807,6 +974,9 @@ def agent_reply(message, history):
     """Entry point for chat front-ends (Gradio, Telegram): takes a message and history, returns the reply text."""
     try:
         return run_agent(message, history)["reply"]
+    except QuotaBusy as busy:
+        trace("quota", f"{busy}. {quota_status()}")
+        return busy_message(message, normalize_history(history), busy.seconds)
     except Exception as exc:
         trace("error", f"{type(exc).__name__}: {exc}")
         return ("Sorry, I'm having a technical problem on my side right now. "
@@ -857,7 +1027,7 @@ def reflect(user_message, route, draft, tools_used, tool_results, history=None):
     revised, issues = draft, []
     try:
         resp = chat(
-            temperature=0,
+            optional=True, temperature=0,
             messages=[{"role": "system", "content": REFLECTION_PROMPT}, {"role": "user", "content": review_input}])
         text = resp.choices[0].message.content or ""
         match = re.search(r"\{.*\}", text, re.S)
@@ -896,52 +1066,215 @@ LOGO_SVG = (
     "<ellipse cx='39' cy='28' rx='7' ry='5.5'/><path d='M36 14 Q39 6 42 14 Z'/></g></svg>"
 )
 CSS = """
-.gradio-container {max-width: 820px !important; margin: auto;}
-#brand {display:flex; align-items:center; gap:14px; padding:14px 18px; border-radius:14px;
-        background:linear-gradient(135deg,#173F73,#2A6BB5); color:white;}
-#brand svg {background:#fff; border-radius:50%; padding:4px;}
-#brand h1 {margin:0; font-size:1.35rem; color:#fff !important;}
-#brand p {margin:2px 0 0; font-size:.88rem; color:#fff !important; opacity:.92;}
-#brand .dot {display:inline-block; width:9px; height:9px; border-radius:50%; background:#4ade80; margin-right:6px;}
-#callbtn {font-size:1.1rem; padding:14px; }
-.embedded .gradio-container {padding-top:6px !important;}
-.call-screen {text-align:center; padding:34px 20px 30px; margin:8px auto; max-width:460px; border-radius:20px;
-              background:linear-gradient(180deg,#f0fdf4,#ffffff); border:1px solid #bbf7d0;
-              box-shadow:0 8px 28px rgba(22,101,52,.14);}
-.call-screen h2 {margin:22px 0 4px; font-size:1.4rem; color:#14532d;}
-.call-screen p {margin:0; color:#4b5563;}
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap');
+
+:root, .gradio-container {
+  --cs-ink:#0E1A2B; --cs-night:#12294A; --cs-night-2:#1B3A66; --cs-sun:#F2A33A; --cs-sun-deep:#B86A0B;
+  --cs-paper:#F4F6F9; --cs-white:#FFFFFF; --cs-line:#D8DFE8; --cs-muted:#51607A; --cs-live:#1C9B63;
+  color-scheme: light;
+}
+html, body, .gradio-container, gradio-app {background: var(--cs-paper) !important;}
+.gradio-container {
+  max-width: 980px !important; width: 100% !important; margin: auto; color: var(--cs-ink);
+  font-family: 'IBM Plex Sans', 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, 'Segoe UI', Tahoma, sans-serif !important;
+}
+.gradio-container *:not(svg *):not(code) {font-family: inherit;}
+.gradio-container .block, .gradio-container .form {border: 0 !important; box-shadow: none !important; background: transparent !important;}
+.gradio-container .gap {gap: 0 !important;}
+:focus-visible {outline: 3px solid var(--cs-sun) !important; outline-offset: 2px;}
+footer {display: none !important;}
+
+/* top bar */
+#brand {display:flex; align-items:center; gap:12px; padding:18px 4px 16px;}
+#brand svg {width:40px; height:40px; flex:none;}
+#brand .name {font-weight:600; font-size:1.08rem; letter-spacing:-.01em; color: var(--cs-ink);}
+#brand .live {margin-left:auto; display:flex; align-items:center; gap:8px; font-size:.9rem; color: var(--cs-muted);}
+.dot {display:inline-block; width:9px; height:9px; border-radius:50%; background: var(--cs-live); box-shadow: 0 0 0 3px rgba(28,155,99,.18);}
+
+/* hero */
+#hero {background: var(--cs-night); border-radius: 10px; padding: 40px 40px 36px !important; gap: 0 !important; color:#fff;}
+#hero .block {background: transparent !important;}
+.hero-grid {display:grid; grid-template-columns: 1.15fr .85fr; gap: 40px; align-items:center; margin-bottom: 28px;}
+.hero-grid h1 {margin:0 0 14px; font-size: clamp(1.85rem, 4.6vw, 2.75rem); line-height:1.08; font-weight:600; letter-spacing:-.025em; color:#fff !important; max-width: 17ch;}
+.hero-grid p {margin:0; font-size:1.06rem; line-height:1.55; color:#C9D6EA !important; max-width: 46ch;}
+.sunpath {margin:0;}
+.sunpath svg {width:100%; height:auto; display:block;}
+.sunpath figcaption {margin-top:8px; font-size:.9rem; line-height:1.45; color:#C9D6EA;}
+.sunpath .horizon {stroke:#7F95B8; stroke-width:1;}
+.sunpath .full {stroke:#7F95B8; stroke-width:1.5; fill:none; stroke-dasharray:2 5;}
+.sunpath .strong {stroke: var(--cs-sun); stroke-width:5; fill:none; stroke-linecap:round;
+                  stroke-dasharray: 42 58; stroke-dashoffset: -29; animation: draw 2.2s cubic-bezier(.3,.7,.2,1) .25s both;}
+.sunpath text {fill:#9FB4D4; font-size:11px;}
+@keyframes draw {from {stroke-dasharray: 0 100;} to {stroke-dasharray: 42 58;}}
+@media (prefers-reduced-motion: reduce) {.sunpath .strong {animation:none;}}
+
+#callbtn, #callbtn button {background: var(--cs-sun) !important; color: var(--cs-ink) !important; border: 0 !important; font-weight:600 !important;
+        font-size:1.05rem !important; padding: 15px 26px !important; border-radius: 8px !important; width:auto !important; min-width: 270px; align-self:flex-start;}
+#callbtn:hover, #callbtn button:hover {background:#F7B454 !important;}
+
+/* facts strip: one ruled row, not four cards */
+.facts {display:grid; grid-template-columns: repeat(4, 1fr); margin: 26px 0 8px; border-top:1px solid var(--cs-line); border-bottom:1px solid var(--cs-line);}
+.facts div {padding:16px 18px 16px 0; margin-right:18px; border-right:1px solid var(--cs-line);}
+.facts div:last-child {border-right:0; margin-right:0;}
+.facts b {display:block; font-size:1.12rem; font-weight:600; letter-spacing:-.01em;}
+.facts span {display:block; margin-top:3px; font-size:.88rem; color: var(--cs-muted); line-height:1.4;}
+
+h2.section {margin: 26px 0 4px; font-size:1.2rem; font-weight:600; letter-spacing:-.015em; color: var(--cs-ink) !important;}
+p.sub {margin:0 0 6px; color: var(--cs-muted) !important; font-size:.95rem;}
+
+/* question list */
+#qlist {gap:0 !important; margin-bottom: 6px;}
+#qlist button {display:flex !important; align-items:center; justify-content:space-between; width:100% !important; text-align:left; background:transparent !important;
+        color: var(--cs-ink) !important; border:0 !important; border-bottom:1px solid var(--cs-line) !important; border-radius:0 !important;
+        padding: 16px 4px !important; font-size:1.02rem !important; font-weight:500 !important;}
+#qlist button::after {content:''; flex:none; width:8px; height:8px; margin-left:16px; border-right:2px solid var(--cs-sun-deep); border-top:2px solid var(--cs-sun-deep); transform: rotate(45deg);}
+#qlist button:hover {background: #E9EEF5 !important;}
+
+/* what happens next: a real sequence */
+.steps {list-style:none; margin:14px 0 6px; padding:0; display:grid; grid-template-columns: repeat(4, 1fr); gap: 0; position:relative;}
+.steps::before {content:''; position:absolute; left:14px; right:14px; top:14px; height:1px; background: var(--cs-line);}
+.steps li {position:relative; padding: 0 16px 0 0;}
+.steps .n {position:relative; display:flex; align-items:center; justify-content:center; width:29px; height:29px; border-radius:50%; background: var(--cs-paper);
+           border:1.5px solid var(--cs-night); font-size:.82rem; font-weight:600; color: var(--cs-night); margin-bottom:10px;}
+.steps b {display:block; font-size:.98rem; font-weight:600;}
+.steps span {display:block; margin-top:2px; font-size:.88rem; color: var(--cs-muted); line-height:1.4;}
+.fineprint {margin: 30px 0 18px; font-size:.84rem; color: var(--cs-muted); text-align:left;}
+
+/* ringing call screen */
+.call-screen {text-align:center; padding:44px 20px 40px; margin:18px auto; max-width:460px; border-radius:12px; background: var(--cs-white); border:1px solid var(--cs-line);}
+.call-screen h2 {margin:24px 0 4px; font-size:1.35rem; font-weight:600; color: var(--cs-ink) !important;}
+.call-screen p {margin:0; color: var(--cs-muted) !important;}
 .ring {position:relative; width:96px; height:96px; margin:auto;}
-.ring .phone {position:relative; z-index:2; width:96px; height:96px; border-radius:50%; background:#16a34a;
+.ring .phone {position:relative; z-index:2; width:96px; height:96px; border-radius:50%; background: var(--cs-night);
               display:flex; align-items:center; justify-content:center; animation:shake 1.2s ease-in-out infinite;}
-.ring .phone svg {width:44px; height:44px;}
-.ring span {position:absolute; inset:0; border-radius:50%; border:3px solid #22c55e; opacity:0;
-            animation:pulse 1.8s ease-out infinite;}
+.ring .phone svg {width:42px; height:42px;}
+.ring span {position:absolute; inset:0; border-radius:50%; border:3px solid var(--cs-sun); opacity:0; animation:pulse 1.8s ease-out infinite;}
 .ring span:nth-child(2) {animation-delay:.6s;} .ring span:nth-child(3) {animation-delay:1.2s;}
 .connected .ring span {animation:none; opacity:0;}
-.connected .ring .phone {animation:none; background:#15803d;}
+.connected .ring .phone {animation:none; background: var(--cs-live);}
 .dots::after {content:''; animation:dots 1.4s steps(4,end) infinite;}
 @keyframes dots {0% {content:'';} 25% {content:'.';} 50% {content:'..';} 75% {content:'...';}}
 @keyframes shake {0%,100% {transform:rotate(0);} 10%,30% {transform:rotate(-12deg);} 20%,40% {transform:rotate(12deg);} 50% {transform:rotate(0);}}
 @keyframes pulse {0% {transform:scale(.9); opacity:.8;} 100% {transform:scale(1.9); opacity:0;}}
-footer {display:none !important;}
+@media (prefers-reduced-motion: reduce) {.ring .phone, .ring span, .dots::after {animation:none;}}
+
+/* conversation */
+#chatwrap {background: var(--cs-white); border:1px solid var(--cs-line); border-radius:12px; overflow:hidden; gap:0 !important;}
+#chatbar {display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--cs-line); background: var(--cs-white);}
+#chatbar .who {display:flex; align-items:center; gap:12px; flex:1;}
+#chatbar .av {width:40px; height:40px; border-radius:50%; background: var(--cs-night); display:flex; align-items:center; justify-content:center; flex:none;}
+#chatbar .av svg {width:30px; height:30px; background:#fff; border-radius:50%; padding:2px;}
+#chatbar b {display:block; font-weight:600; font-size:1rem;}
+#chatbar small {display:flex; align-items:center; gap:6px; color: var(--cs-muted); font-size:.85rem;}
+#endbtn {flex:none; width:auto !important; min-width:0 !important; background:transparent !important; color: var(--cs-muted) !important;
+         border:1px solid var(--cs-line) !important; border-radius:8px !important; font-size:.9rem !important; padding: 8px 14px !important; font-weight:500 !important;}
+#endbtn:hover {color: var(--cs-ink) !important; border-color: var(--cs-muted) !important;}
+#chatrow {gap:0 !important; align-items:center; border-bottom:1px solid var(--cs-line);}
+#zchat {border:0 !important; background: var(--cs-white) !important;}
+#zchat .message {font-size:15px !important; line-height:1.5 !important; box-shadow:none !important; border-radius:14px !important;}
+#zchat .user .message, #zchat .message.user {background: var(--cs-night) !important; color:#fff !important; border:0 !important;}
+#zchat .user .message *, #zchat .message.user * {color:#fff !important;}
+#zchat .bot .message, #zchat .message.bot {background: #EEF2F7 !important; color: var(--cs-ink) !important; border:0 !important;}
+#zchat .placeholder-content, #zchat .placeholder {color: var(--cs-muted) !important;}
+.gradio-container textarea, .gradio-container input[type=text] {font-size:15px !important; border:1px solid var(--cs-line) !important; border-radius:10px !important; background:#fff !important; color: var(--cs-ink) !important;}
+.gradio-container textarea::placeholder {color:#64748b !important; opacity:1 !important;}
+.gradio-container button.submit-button, .gradio-container .submit-button {background: var(--cs-sun) !important; color: var(--cs-ink) !important; border-radius:10px !important;}
+.embedded .gradio-container {padding-top:6px !important;}
+
+/* polish pass */
+#callbtn {margin-top: 30px !important;}
+#qlist button {padding-left: 0 !important; padding-right: 0 !important;}
+#qlist button:hover {padding-left: 8px !important;}
+#chatwrap {width:100% !important; min-width:100% !important;}
+#chatwrap > .form, #chatwrap form {padding: 12px 14px 14px !important; background:#fff !important; border-top:1px solid var(--cs-line) !important;}
+#chatwrap textarea {padding: 12px 14px !important; min-height: 46px;}
+#chatwrap textarea:focus {border-color: var(--cs-sun-deep) !important; box-shadow: 0 0 0 3px rgba(242,163,58,.25) !important;}
+.gradio-container .html-container {padding: 0 !important;}
+#chatbar {border-bottom: 0 !important;}
+#chatrow {margin: 0 !important;}
+.gradio-container .block.padded, .gradio-container .prose {padding: 0 !important;}
+#hero .prose, #hero .block {padding: 0 !important;}
+#qlist button, #qlist .block, #callbtn, #endbtn {box-shadow: none !important;}
+#qlist button {transition: background .15s;}
+#qlist button:hover {padding-left: 10px !important;}
+#brand {border-bottom: 1px solid var(--cs-line); margin-bottom: 16px;}
+#brand .name, #brand .live {white-space: nowrap;}
+#chatrow {display:flex !important; flex-direction:row !important; align-items:center; flex-wrap:nowrap !important;
+          padding-right: 14px; border-bottom:1px solid var(--cs-line); background:#fff !important;}
+#chatrow > * {min-width:0;}
+#chatrow > :first-child {flex:1 1 auto !important;}
+#chatrow #endbtn {flex:none !important;}
+#zchat .user .message-content, #zchat .user .message-content * , #zchat .user p {color:#fff !important;}
+#zchat .bot .message-content, #zchat .bot .message-content *, #zchat .bot p {color: var(--cs-ink) !important;}
+#zchat .message {padding: 10px 14px !important;}
+
+@media (max-width: 760px) {
+  #hero {padding: 26px 20px 24px !important;}
+  .hero-grid {grid-template-columns: 1fr; gap: 22px;}
+  .facts {grid-template-columns: 1fr 1fr;}
+  .facts div:nth-child(2) {border-right:0; margin-right:0;}
+  .facts div:nth-child(-n+2) {border-bottom:1px solid var(--cs-line);}
+  .steps {grid-template-columns: 1fr; gap: 18px;}
+  .steps::before {left:14px; right:auto; top:14px; bottom:14px; width:1px; height:auto;}
+  .steps li {display:grid; grid-template-columns: 29px 1fr; column-gap:14px; padding:0;}
+  .steps .n {margin-bottom:0; grid-row: span 2;}
+  #callbtn, #callbtn button {width:100% !important; min-width:0;}
+  #brand .live {font-size:.8rem;}
+  #brand .name {font-size:1rem;}
+  .gradio-container {padding-left:12px !important; padding-right:12px !important;}
+}
 """
 # Compact layout used only inside the website's chat window (an iframe about 400 x 560 px).
 EMBED_CSS = """
-html, body {overflow: hidden !important;}
+html, body {overflow-x: hidden !important; overflow-y: auto !important;}   /* the landing page scrolls; the chat screen fits the window */
 .gradio-container {padding: 4px 8px !important; min-height: 0 !important; max-width: 100% !important;}
 footer {display: none !important;}
 .progress-text, .meta-text, .meta-text-center, .eta-bar {display: none !important;}
-#zchat, #zchat .wrapper, #zchat .bubble-wrap {height: calc(100vh - 232px) !important; max-height: calc(100vh - 232px) !important;}
+#chatwrap {border-radius: 10px;}
+#zchat, #zchat .wrapper, #zchat .bubble-wrap {height: calc(100vh - 290px) !important; max-height: calc(100vh - 290px) !important;}
 #zchat .message-row {max-width: 100% !important; overflow: hidden !important;}
 #zchat .message, #zchat .message * {font-size: 14px !important; line-height: 1.4 !important;}
 #zchat .message {max-width: 100% !important; width: auto !important; overflow-wrap: break-word !important; box-sizing: border-box !important;}
 #zchat .flex-wrap {min-width: 0 !important;}
-textarea, input[type=text] {font-size: 14px !important; border: 1px solid #cbd5e1 !important; border-radius: 10px !important;}
-textarea::placeholder, input::placeholder {color: #64748b !important; opacity: 1 !important;}
+textarea, input[type=text] {font-size: 14px !important;}
 .call-screen {padding: 20px 12px !important;}
 """
-HEADER = (f"<div id='brand'>{LOGO_SVG}<div><h1>CedarSun Energy</h1>"
-          "<p><span class='dot'></span>Solar advisors &middot; Beirut, Lebanon</p></div></div>")
+
+HEADER = (f"<div id='brand'>{LOGO_SVG}<span class='name'>CedarSun Energy</span>"
+          "<span class='live'><span class='dot'></span>Advisors online</span></div>")
+
+SUN_PATH_SVG = (
+    "<svg viewBox='0 0 360 200' role='img' aria-label='The sun crosses the sky from sunrise to sunset; the strongest five hours are highlighted'>"
+    "<line class='horizon' x1='10' y1='170' x2='350' y2='170'/>"
+    "<path class='full' pathLength='100' d='M20 170 Q180 -70 340 170'/>"
+    "<path class='strong' pathLength='100' d='M20 170 Q180 -70 340 170'/>"
+    "<circle cx='180' cy='50' r='22' fill='#F2A33A' opacity='.22'/><circle cx='180' cy='50' r='12' fill='#F2A33A'/>"
+    "<text x='20' y='190'>Sunrise</text><text x='340' y='190' text-anchor='end'>Sunset</text></svg>")
+
+HERO_HTML = (
+    "<div class='hero-grid'><div>"
+    "<h1>Tell us what runs in your home. We'll size the solar.</h1>"
+    "<p>Chat with Zeina, CedarSun's solar advisor, for a rough system size in a few minutes. "
+    "A free site survey comes next, with no obligation. Ask in English, French or Arabic.</p></div>"
+    f"<figure class='sunpath'>{SUN_PATH_SVG}"
+    "<figcaption>Beirut gets about 5 hours of strong sun a day. We size your system around that.</figcaption></figure></div>")
+
+FACTS_HTML = ("<div class='facts'>"
+              "<div><b>380+ homes</b><span>powered since 2019</span></div>"
+              "<div><b>Free site survey</b><span>no obligation</span></div>"
+              "<div><b>10-year warranty</b><span>on batteries and inverters</span></div>"
+              "<div><b>A call within 1 business day</b><span>from a specialist</span></div></div>")
+
+STEPS_HTML = ("<h2 class='section'>What happens after you chat</h2>"
+              "<ol class='steps'>"
+              "<li><span class='n'>1</span><b>A specialist calls you</b><span>Within 1 business day</span></li>"
+              "<li><span class='n'>2</span><b>Free site survey</b><span>Usually within 5 business days</span></li>"
+              "<li><span class='n'>3</span><b>Written quotation</b><span>Within 3 business days of the survey</span></li>"
+              "<li><span class='n'>4</span><b>Installation</b><span>Typically 1 to 3 days once approved</span></li></ol>")
+
+CHATBAR_HTML = (f"<div id='chatbar'><div class='who'><span class='av'>{LOGO_SVG}</span>"
+                "<div><b>Zeina</b><small><span class='dot'></span>CedarSun solar advisor, online</small></div></div></div>")
+
 SUGGESTED_QUESTIONS = ["How many solar panels do I need for my apartment?",
                        "What warranty do you give on batteries?",
                        "How does the free site survey work?",
@@ -995,34 +1328,45 @@ def build_demo():
     def end_call():
         return (*show(True, False, False), "", [], [])
 
-    # Inside the website's chat window the site already shows the brand header, so hide ours (retry while the page renders).
-    embed_js = ("() => { if (window.self === window.top) return; const css = " + json.dumps(EMBED_CSS) + "; "
+    # The page is always light so the brand colours stay as designed. Inside the website's chat window the site already
+    # shows the brand header, so hide ours (retry while the page renders).
+    embed_js = ("() => { const kill = () => document.body.classList.remove('dark'); kill(); "
+                "new MutationObserver(kill).observe(document.body, {attributes: true, attributeFilter: ['class']}); "
+                "if (window.self === window.top) return; const css = " + json.dumps(EMBED_CSS) + "; "
                 "const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); "
                 "let n = 0; const t = setInterval(() => { const b = document.getElementById('brand'); if (b) b.style.display = 'none'; "
                 "if (b || ++n > 40) clearInterval(t); }, 150); }")
-    with gr.Blocks(title="CedarSun Energy | Customer Support", css=CSS, js=embed_js, theme=gr.themes.Soft(primary_hue="green")) as demo:
+    with gr.Blocks(title="CedarSun Energy | Customer Support", css=CSS, js=embed_js,
+                   theme=gr.themes.Soft(primary_hue="amber", neutral_hue="slate")) as demo:
         gr.HTML(HEADER)
 
         with gr.Column(visible=True) as landing:
-            gr.Markdown("### How can we help you today?\nPick a common question, or talk to one of our solar advisors.")
-            question_buttons = [gr.Button(q) for q in SUGGESTED_QUESTIONS]
-            talk = gr.Button("Talk to a solar advisor", variant="primary", elem_id="callbtn")
+            with gr.Column(elem_id="hero"):
+                gr.HTML(HERO_HTML)
+                talk = gr.Button("Talk to a solar advisor", variant="primary", elem_id="callbtn")
+            gr.HTML(FACTS_HTML)
+            gr.HTML("<h2 class='section'>Start with a question</h2><p class='sub'>Pick one and Zeina answers right away.</p>")
+            with gr.Column(elem_id="qlist"):
+                question_buttons = [gr.Button(q) for q in SUGGESTED_QUESTIONS]
+            gr.HTML(STEPS_HTML)
 
         with gr.Column(visible=False) as calling:
             call_view = gr.HTML()
 
-        with gr.Column(visible=False) as chat_col:
+        with gr.Column(visible=False, elem_id="chatwrap") as chat_col:
+            with gr.Row(elem_id="chatrow"):
+                gr.HTML(CHATBAR_HTML)
+                hang_up = gr.Button("End conversation", size="sm", elem_id="endbtn")
             chat = gr.ChatInterface(
                 fn=agent_reply,
                 type="messages",
                 chatbot=gr.Chatbot(type="messages", height=460, show_label=False, elem_id="zchat",
                                    placeholder="<b>Zeina</b> from CedarSun Energy<br>Send a message to start chatting.",
                                    avatar_images=(None, str(avatar))),
-                textbox=gr.Textbox(placeholder="Type your message to Zeina...", container=False, scale=7),
+                textbox=gr.Textbox(placeholder="Type your message to Zeina...", container=False, scale=7, lines=1, max_lines=4),
             )
-            hang_up = gr.Button("End conversation", size="sm")
 
-        gr.Markdown("<center><small>CedarSun Energy is a fictional company (university project).</small></center>")
+        gr.HTML("<p class='fineprint'>CedarSun Energy is a fictional company (university project). Beirut, Lebanon.</p>")
 
         # The ChatInterface keeps its own copy of the history, so both the visible chatbot and that state are updated together.
         outputs = [landing, calling, chat_col, call_view, chat.chatbot, chat.chatbot_state]
