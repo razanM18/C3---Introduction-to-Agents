@@ -259,6 +259,47 @@ def test_same_key_listed_under_two_provider_names_counts_once():
         app.FALLBACKS = []
 
 
+def test_short_retry_delay_is_a_minute_limit_even_if_the_text_says_per_day():
+    """Gemini error texts mention the per-day quota even when only the per-minute one was hit: trust the retry delay."""
+    exc = Err("Quota exceeded for metric: generate_content_free_tier_requests, per day limit: 20. Please retry in 30s.", 429)
+    assert app._cooldown_seconds("quota", exc) == 30
+    assert app._cooldown_seconds("quota", Err("per day limit. Please retry in 2s.", 429)) == app.MIN_QUOTA_COOLDOWN
+
+
+def test_daily_limit_without_a_delay_is_rechecked_after_a_while_not_parked_for_hours():
+    exc = Err("Quota exceeded: GenerateRequestsPerDayPerProjectPerModel-FreeTier", 429)
+    assert app._cooldown_seconds("quota", exc) == app.DAILY_RECHECK < app.DAILY_COOLDOWN
+    assert app._cooldown_seconds("quota", daily_429()) == 10800          # an explicit long delay is respected, capped at DAILY_COOLDOWN
+
+
+def test_logs_endpoint_is_closed_without_the_secret():
+    saved = os.environ.get("LOGS_TOKEN", "")
+    try:
+        os.environ["LOGS_TOKEN"] = ""
+        assert json.loads(app.read_logs("")) == {"error": "forbidden"}                 # no secret configured: switched off
+        assert json.loads(app.read_logs("anything")) == {"error": "forbidden"}
+        os.environ["LOGS_TOKEN"] = "s3cret"
+        assert json.loads(app.read_logs("wrong")) == {"error": "forbidden"}
+        app.record_feedback("log endpoint test question")
+        data = json.loads(app.read_logs("s3cret"))
+        assert "feedback.jsonl" in data and "log endpoint test question" in data["feedback.jsonl"]
+    finally:
+        os.environ["LOGS_TOKEN"] = saved
+
+
+def test_log_sync_does_nothing_unless_configured():
+    started = []
+    import threading
+    real = threading.Thread
+    threading.Thread = lambda *a, **k: started.append(1) or real(target=lambda: None)
+    try:
+        app.LOGS_REPO = ""
+        app._sync_log("feedback.jsonl")
+        assert started == []                                    # no LOGS_REPO: no background upload is started
+    finally:
+        threading.Thread = real
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:

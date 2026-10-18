@@ -119,7 +119,7 @@ FALLBACKS = _parse_fallbacks(os.getenv("LLM_FALLBACKS", ""))
 # ---------------------------------------------------------------- KEY POOL (several keys, cooldowns, friendly busy message)
 RPM_LIMIT = int(os.getenv("RPM_LIMIT", "0"))                  # requests per minute per key and model; 0 = off. Free Gemini often allows 5.
 QUOTA_MAX_WAIT = float(os.getenv("QUOTA_MAX_WAIT", "8"))      # longest pause (seconds) before a reply while a quota window reopens
-MIN_QUOTA_COOLDOWN, MAX_QUOTA_COOLDOWN, DAILY_COOLDOWN = 15, 120, 3 * 3600
+MIN_QUOTA_COOLDOWN, MAX_QUOTA_COOLDOWN, DAILY_COOLDOWN, DAILY_RECHECK = 15, 120, 3 * 3600, 20 * 60
 
 Endpoint = namedtuple("Endpoint", "provider model idx key")   # one key on one model: quotas are counted per project and model
 Endpoint.id = property(lambda self: (self.provider, self.model, self.idx))
@@ -213,9 +213,15 @@ def _error_kind(exc):
 
 def _cooldown_seconds(kind, exc):
     if kind == "quota":
+        wait = _retry_seconds(exc)
+        # Gemini error texts often mention the per-day quota even when only the per-minute one was hit, so trust the
+        # provider's own retry delay: a short delay is a per-minute limit. Only a long or missing delay plus a per-day
+        # mention counts as a daily limit, and even then the key is re-tried after a while instead of being parked for hours.
+        if 0 < wait <= 300:
+            return min(max(wait, MIN_QUOTA_COOLDOWN), MAX_QUOTA_COOLDOWN)
         if re.search(r"per ?day|\btpd\b", str(exc), re.I):
-            return DAILY_COOLDOWN                    # a daily limit will not clear for hours
-        return min(max(_retry_seconds(exc), MIN_QUOTA_COOLDOWN), MAX_QUOTA_COOLDOWN)
+            return min(wait, DAILY_COOLDOWN) if wait > 300 else DAILY_RECHECK
+        return min(max(wait, MIN_QUOTA_COOLDOWN), MAX_QUOTA_COOLDOWN)
     return {"auth": 3600, "missing": 600, "outage": 30}.get(kind, 0)
 
 
@@ -460,6 +466,29 @@ def _log(filename, record):
     record = {"timestamp": _now(), **record}
     with open(LOG_DIR / filename, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    _sync_log(filename)
+
+
+LOGS_REPO = os.getenv("LOGS_REPO", "")        # e.g. razanmo2002/cedarsun-logs (a private Dataset repo)
+
+
+def _push_log(filename):
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi(token=os.getenv("HF_TOKEN"))
+        api.create_repo(LOGS_REPO, repo_type="dataset", private=True, exist_ok=True)
+        api.upload_file(path_or_fileobj=str(LOG_DIR / filename), path_in_repo=f"logs/{filename}",
+                        repo_id=LOGS_REPO, repo_type="dataset", commit_message=f"update {filename}")
+    except Exception as exc:
+        trace("logs", f"could not copy {filename} to {LOGS_REPO}: {type(exc).__name__}")
+
+
+def _sync_log(filename):
+    """Copy the log file to a Hugging Face Dataset repo so it survives restarts and shows up in a Files tab.
+    (Writing into the Space's own repo would restart the Space every time, so a separate dataset is used.)"""
+    if LOGS_REPO and os.getenv("HF_TOKEN"):
+        import threading
+        threading.Thread(target=_push_log, args=(filename,), daemon=True).start()
 
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
@@ -1294,6 +1323,18 @@ def _call_html(title, subtitle, connected=False):
             f"<div class='phone'>{PHONE_SVG}</div></div><h2 class='{dots.strip()}'>{title}</h2><p>{subtitle}</p></div>")
 
 
+def read_logs(token: str = "") -> str:
+    """Lets the owner download the logs of the running Space (the Files tab only shows the repository, never files the app
+    writes while running). Set a secret LOGS_TOKEN and call the 'logs' API with it; without the secret it is switched off."""
+    expected = os.getenv("LOGS_TOKEN", "")
+    if not expected or token != expected:
+        return json.dumps({"error": "forbidden"})
+    out = {}
+    for f in sorted(LOG_DIR.glob("*.jsonl")):
+        out[f.name] = f.read_text(encoding="utf-8")
+    return json.dumps(out, ensure_ascii=False)
+
+
 def submit_lead(name: str, email: str, area: str = "", message: str = "") -> str:
     """Used by the website's contact form: saves the lead exactly like the chat tool does."""
     note = f"[Website form] Area: {area or 'not given'}. {message or ''}".strip()
@@ -1374,6 +1415,7 @@ def build_demo():
         for btn, q in zip(question_buttons, SUGGESTED_QUESTIONS):
             btn.click(connect(q), None, outputs)
         hang_up.click(end_call, None, outputs)
+        gr.api(read_logs, api_name="logs")        # owner-only (needs the LOGS_TOKEN secret): downloads leads, feedback, reflections
         gr.api(submit_lead, api_name="lead")      # the website's contact form posts here
     return demo
 
