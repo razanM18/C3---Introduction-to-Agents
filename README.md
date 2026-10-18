@@ -1,10 +1,4 @@
----
-title: CedarSun Energy Assistant
-emoji: ☀️
-sdk: gradio
-app_file: app.py
-pinned: false
----
+
 
 # CedarSun Energy: Agent-Powered Business Assistant (C3)
 
