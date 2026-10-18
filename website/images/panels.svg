@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 220" role="img" aria-label="Solar panels">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#BFE3F6"/><stop offset="1" stop-color="#FDEBC8"/></linearGradient>
+    <linearGradient id="pn" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3F78B5"/><stop offset="1" stop-color="#17305A"/></linearGradient>
+    <linearGradient id="sn" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC247"/><stop offset="1" stop-color="#F08A1C"/></linearGradient>
+  </defs>
+  <rect width="400" height="220" fill="url(#bg)"/>
+  <circle cx="330" cy="52" r="26" fill="url(#sn)"/>
+  <g stroke="#F5A524" stroke-width="4" stroke-linecap="round"><line x1="330" y1="10" x2="330" y2="18"/><line x1="372" y1="52" x2="364" y2="52"/><line x1="360" y1="22" x2="354" y2="28"/><line x1="300" y1="22" x2="306" y2="28"/></g>
+  <path d="M0 170 L70 120 L130 155 L200 105 L290 160 L350 130 L400 160 L400 220 L0 220Z" fill="#9CC3DC"/>
+  <polygon points="40,190 120,110 360,110 340,190" fill="#0F203F" opacity=".25"/>
+  <g fill="url(#pn)" stroke="#A9C8EA" stroke-width="2">
+    <polygon points="62,168 118,118 190,118 150,168"/><polygon points="156,168 196,118 268,118 244,168"/><polygon points="250,168 274,118 346,118 338,168"/>
+    <polygon points="52,184 112,174 148,174 100,190"/>
+  </g>
+  <g stroke="#A9C8EA" stroke-width="1" opacity=".6"><line x1="90" y1="143" x2="170" y2="143"/><line x1="176" y1="143" x2="256" y2="143"/><line x1="262" y1="143" x2="342" y2="143"/><line x1="154" y1="118" x2="120" y2="168"/><line x1="232" y1="118" x2="200" y2="168"/><line x1="310" y1="118" x2="290" y2="168"/></g>
+  <rect x="0" y="190" width="400" height="30" fill="#E9DCC6"/>
+</svg>

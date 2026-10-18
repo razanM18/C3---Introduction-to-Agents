@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CedarSun Energy | Residential Solar in Lebanon</title>
+<meta name="description" content="CedarSun Energy designs, installs and supports rooftop solar, hybrid inverters and lithium batteries for homes across Lebanon. Free site survey, no obligation.">
+<link rel="icon" href="images/logo-icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header" id="top">
+  <div class="container nav-wrap">
+    <a class="brand" href="#top" aria-label="CedarSun Energy home">
+      <img src="images/logo-icon.svg" alt="" width="62" height="62">
+      <span class="brand-text"><strong>CedarSun</strong><span>Energy</span></span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav"><span></span><span></span><span></span></button>
+    <nav id="nav" class="nav">
+      <a href="#top" class="active">Home</a>
+      <a href="#solutions">Our Solutions</a>
+      <a href="#why">Why Solar?</a>
+      <a href="#process">How It Works</a>
+      <a href="#about">About Us</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- HERO -->
+  <section class="hero">
+    <img class="hero-art" src="images/hero.svg" alt="Solar panels on a roof above the Beirut coastline">
+    <div class="container hero-inner">
+      <h1>Harness the Lebanese sun,<br>empower your home</h1>
+      <p class="lead">Residential solar, batteries and live monitoring for homes, villas and apartments in Beirut and across Lebanon.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#contact">Get your free site survey</a>
+        <button class="btn btn-ghost" data-open-chat type="button">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+          <span>Chat with<br>an advisor</span>
+        </button>
+      </div>
+    </div>
+    <div class="container hero-cards">
+      <div class="info-card">
+        <h3>Free, no-obligation site survey</h3>
+        <p>An engineer visits your home, checks the roof, shading and electrical panel, and sizes the system around your real appliances.</p>
+        <ul class="ticks">
+          <li>Written load analysis showing how the design was calculated</li>
+          <li>Honest sizing: the system your home needs, not the biggest we can sell</li>
+          <li>A specialist calls you within 1 business day</li>
+        </ul>
+      </div>
+      <form class="info-card lead-form" id="lead-form" novalidate>
+        <h3>Request your free survey</h3>
+        <div class="form-grid">
+          <label>Full name<input name="name" type="text" autocomplete="name" required placeholder="Your name"></label>
+          <label>Email<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
+          <label>Area
+            <select name="area">
+              <option value="">Select your area</option>
+              <option>Beirut</option><option>Metn</option><option>Keserwan</option><option>Baabda</option><option>Aley</option>
+              <option>Chouf</option><option>Jbeil</option><option>Batroun</option><option>Tripoli</option><option>Saida</option><option>Zahle</option><option>Other</option>
+            </select>
+          </label>
+          <label>About your home<input name="message" type="text" placeholder="Flat, villa, main appliances..."></label>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">Send my request</button>
+        <p class="form-note" id="lead-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section class="stats">
+    <div class="container stat-grid">
+      <div><strong>2019</strong><span>founded in Beirut</span></div>
+      <div><strong>380+</strong><span>homes powered</span></div>
+      <div><strong>~30</strong><span>engineers, installers and support</span></div>
+      <div><strong>10 yrs</strong><span>battery and inverter warranty</span></div>
+    </div>
+  </section>
+
+  <!-- SOLUTIONS -->
+  <section class="section" id="solutions">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Our solutions</span>
+        <h2>A system sized around your home</h2>
+        <p>These packages are starting points. Your final design comes after the free site survey, and every price is a written quotation, so there are no surprises.</p>
+      </div>
+      <div class="cards three">
+        <article class="pkg">
+          <img src="images/panels.svg" alt="" loading="lazy">
+          <h3>Essential Backup</h3>
+          <p class="pkg-for">Lighting, fridge, TV, internet and fans.</p>
+          <ul><li>4 panels (1.8 kWp)</li><li>3 kW hybrid inverter</li><li>5.12 kWh battery</li></ul>
+          <small>Not designed for air conditioners.</small>
+        </article>
+        <article class="pkg featured">
+          <img src="images/panels.svg" alt="" loading="lazy">
+          <h3>Smart Home Hybrid</h3>
+          <p class="pkg-for">Essentials plus one air conditioner for part of the day.</p>
+          <ul><li>8 panels (3.6 kWp)</li><li>5 kW hybrid inverter</li><li>10.24 kWh battery</li></ul>
+          <small>Great for flats and mid-size homes.</small>
+        </article>
+        <article class="pkg">
+          <img src="images/panels.svg" alt="" loading="lazy">
+          <h3>High-Demand Home</h3>
+          <p class="pkg-for">Larger homes with several air conditioners.</p>
+          <ul><li>14 panels (6.3 kWp)</li><li>8 kW hybrid inverter</li><li>15.36 kWh battery</li></ul>
+          <small>Sized to your actual daily routine.</small>
+        </article>
+      </div>
+      <p class="center-note">Villa, electric water heating, cooking loads or an unusual roof? We design a <strong>Custom System</strong> with our engineers. <a href="#contact">Talk to us</a>.</p>
+
+      <h3 class="sub-title">Everything is included</h3>
+      <div class="service-grid">
+        <div class="service"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-4 12.7V18h8v-3.3A7 7 0 0 0 12 2zm-3 18h6v2H9z"/></svg><h4>Free consultation and survey</h4><p>Phone or showroom consultation, then an on-site visit of about 1.5 to 2 hours.</p></div>
+        <div class="service"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 16h2v-5H8zm3 0h2V8h-2zm3 0h2v-3h-2z"/></svg><h4>Load analysis and design</h4><p>A written design with panel count, inverter size, battery capacity and expected production.</p></div>
+        <div class="service"><svg viewBox="0 0 24 24"><path d="M3 21h18v-2H3zM12 3 2 12h3v6h14v-6h3z"/></svg><h4>Installation and commissioning</h4><p>Mounting, wiring, protection devices, testing, app setup and handover.</p></div>
+        <div class="service"><svg viewBox="0 0 24 24"><path d="M16 4h-2V2h-4v2H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/></svg><h4>Battery storage</h4><p>Lithium iron phosphate (LFP) batteries for the evening and for power cuts.</p></div>
+        <div class="service"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8v5h2V4h-8v2h5l-7 7-4-4-8 8z"/></svg><h4>Live monitoring</h4><p>The CedarSun Home app shows generation, consumption, battery level and fault alerts.</p></div>
+        <div class="service"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM2 11h3v2H2zm17 0h3v2h-3zM11 2h2v3h-2zm0 17h2v3h-2z"/></svg><h4>Maintenance and cleaning</h4><p>Annual inspection plan, panel cleaning and performance checks.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHY SOLAR -->
+  <section class="section alt" id="why">
+    <div class="container split">
+      <div>
+        <span class="eyebrow">Why solar?</span>
+        <h2>Reliable power, understood by you</h2>
+        <p>Lebanon gets plenty of sun: roughly 5 to 5.5 peak-sun hours a day for planning on the coast and in the Bekaa. A well-sized system with a battery keeps your lights, fridge, internet and more running when the grid or the generator is off.</p>
+        <ul class="ticks big">
+          <li><strong>Fewer disruptions.</strong> Power cuts and generator dependence affect daily life less.</li>
+          <li><strong>You see everything.</strong> Live data in the CedarSun Home app, and our team is alerted automatically if something is wrong.</li>
+          <li><strong>Honest numbers.</strong> We state our assumptions, losses and limits in every proposal.</li>
+          <li><strong>Safety first.</strong> Electrical work is done only by qualified CedarSun technicians.</li>
+        </ul>
+      </div>
+      <div class="art-card"><img src="images/home.svg" alt="A home powered by solar panels with a battery and monitoring app" loading="lazy"></div>
+    </div>
+  </section>
+
+  <!-- PROCESS -->
+  <section class="section" id="process">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">How it works</span>
+        <h2>From first call to a working system</h2>
+        <p>Timelines are our usual estimates, not guarantees.</p>
+      </div>
+      <ol class="steps">
+        <li><span>1</span><h4>Talk to us</h4><p>Chat with an advisor or send the form. A specialist calls within 1 business day.</p></li>
+        <li><span>2</span><h4>Free site survey</h4><p>Usually within 5 business days. We inspect the roof, shading and electrical panel.</p></li>
+        <li><span>3</span><h4>Written quotation</h4><p>Within 3 business days after the survey, with your load analysis and full design.</p></li>
+        <li><span>4</span><h4>Installation</h4><p>Typically 1 to 3 days once approved, with testing and commissioning.</p></li>
+        <li><span>5</span><h4>Monitor and relax</h4><p>Follow your system in the app, with support and maintenance after the sale.</p></li>
+      </ol>
+      <p class="center-note">We do not publish prices online: every price is a written quotation in US dollars after your free survey. Payment is usually a deposit on approval and the balance at commissioning.</p>
+    </div>
+  </section>
+
+  <!-- WARRANTY -->
+  <section class="warranty">
+    <div class="container">
+      <h2>Backed by long warranties</h2>
+      <div class="warranty-grid">
+        <div><strong>12 yrs</strong><span>panel product</span></div>
+        <div><strong>25 yrs</strong><span>panel performance</span></div>
+        <div><strong>10 yrs</strong><span>inverter</span></div>
+        <div><strong>10 yrs</strong><span>battery</span></div>
+        <div><strong>5 yrs</strong><span>CedarSun workmanship</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section class="section" id="about">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">About us</span>
+        <h2>Smarter solar. Reliable power. A brighter future.</h2>
+        <p>CedarSun Energy S.A.L. is a Lebanese residential solar company based in Sin el Fil, Beirut. Our mission is to give Lebanese households reliable, understandable electricity from the sun. We recommend the system a home needs, and we support it for the long term.</p>
+      </div>
+      <div class="team">
+        <div class="member"><span class="avatar">KH</span><h4>Karim Haddad</h4><p>Co-founder and CEO</p><small>Electrical engineer, 15 years in power systems and renewables.</small></div>
+        <div class="member"><span class="avatar">LN</span><h4>Layal Nassar</h4><p>Co-founder and Head of Engineering</p><small>Built our sizing method and monitoring platform.</small></div>
+        <div class="member"><span class="avatar">RK</span><h4>Rami Khoury</h4><p>Head of Installations</p><small>Licensed electrician with 12 years of experience.</small></div>
+        <div class="member"><span class="avatar">DM</span><h4>Dana Mansour</h4><p>Customer Experience Manager</p><small>Surveys, follow-up and after-sales support.</small></div>
+      </div>
+      <h3 class="sub-title">Where we work</h3>
+      <div class="areas">
+        <span>Beirut</span><span>Metn</span><span>Keserwan</span><span>Baabda</span><span>Aley</span><span>Chouf</span>
+        <span>Jbeil</span><span>Batroun</span><span>Tripoli</span><span>Saida</span><span>Zahle</span>
+      </div>
+      <p class="center-note">We install for private homes, villas and apartments. We do not currently install commercial or industrial systems.</p>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section alt" id="faq">
+    <div class="container narrow">
+      <div class="section-head"><span class="eyebrow">Questions</span><h2>Frequently asked</h2></div>
+      <details><summary>Is the site survey really free?</summary><p>Yes. The survey and consultation are free and come with no obligation.</p></details>
+      <details><summary>Do you publish your prices?</summary><p>No. Every home is different, so every price is a written quotation in US dollars after the free site survey.</p></details>
+      <details><summary>How long does installation take?</summary><p>Typically 1 to 3 days once your quotation is approved. This is an estimate, not a guarantee.</p></details>
+      <details><summary>Can I run air conditioners on solar?</summary><p>Yes, with the right size. The Smart Home Hybrid covers one air conditioner for part of the day and the High-Demand Home is for several. The Essential Backup is not designed for air conditioners.</p></details>
+      <details><summary>Which areas do you cover?</summary><p>Beirut, Mount Lebanon (Metn, Keserwan, Baabda, Aley, Chouf), Jbeil, Batroun, Tripoli, Saida and Zahle. Other areas on request after review.</p></details>
+      <details><summary>Who answers in the chat?</summary><p>Zeina, CedarSun's AI solar assistant. She can answer questions, give a rough system size and book your free survey. Our human specialists follow up on every request.</p></details>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section class="section" id="contact">
+    <div class="container contact">
+      <div>
+        <span class="eyebrow">Contact</span>
+        <h2>Let's talk about your home</h2>
+        <ul class="contact-list">
+          <li><strong>Showroom and engineering office</strong><br>Sin el Fil, Beirut, Lebanon</li>
+          <li><strong>Hours</strong><br>Monday to Friday 08:00 to 17:00<br>Saturday 09:00 to 13:00</li>
+          <li><strong>Email</strong><br>hello@cedarsun-energy.example</li>
+          <li><strong>Phone / WhatsApp</strong><br>+961 1 000 000</li>
+          <li><strong>Support line for system faults</strong><br>support@cedarsun-energy.example<br>+961 1 000 111</li>
+        </ul>
+      </div>
+      <div class="chat-promo">
+        <img src="images/logo-icon.svg" alt="" width="84" height="84">
+        <h3>Prefer to chat?</h3>
+        <p>Talk to a solar advisor right now. Ask about panels and batteries, get a rough system size, or book your free survey.</p>
+        <button class="btn btn-primary" data-open-chat type="button">Chat with an advisor</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container foot">
+    <div class="brand light">
+      <img src="images/logo-icon.svg" alt="" width="44" height="44">
+      <span class="brand-text"><strong>CedarSun</strong><span>Energy</span></span>
+    </div>
+    <p>CedarSun Energy is a fictional company created for a university project (EECE 503P/798S). All names, contacts and figures are illustrative.</p>
+    <p class="copy">&copy; <span id="year"></span> CedarSun Energy</p>
+  </div>
+</footer>
+
+<!-- CHAT WIDGET -->
+<button class="chat-fab" id="chat-fab" aria-label="Chat with an advisor" aria-expanded="false" type="button">
+  <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="currentColor" d="M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+</button>
+<section class="chat-panel" id="chat-panel" aria-label="Chat with a solar advisor" hidden>
+  <div class="chat-head">
+    <img src="images/logo-icon.svg" alt="" width="34" height="34">
+    <div><strong>CedarSun Energy</strong><span>Solar advisors</span></div>
+    <button class="chat-close" id="chat-close" aria-label="Close chat" type="button">&times;</button>
+  </div>
+  <div class="chat-body">
+    <iframe id="chat-frame" title="Chat with a CedarSun solar advisor" loading="lazy"></iframe>
+    <div class="chat-offline" id="chat-offline" hidden>
+      <p><strong>The chat is not running.</strong></p>
+      <p>Start it with <code>python app.py</code> in the project folder, then reopen this window.</p>
+    </div>
+  </div>
+</section>
+
+<script src="config.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

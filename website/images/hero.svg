@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 760" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Rooftop solar panels above the Beirut coastline">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FCBF0"/><stop offset=".55" stop-color="#CFE8F6"/><stop offset="1" stop-color="#FCE7BF"/></linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#46A9C9"/><stop offset="1" stop-color="#1B6F96"/></linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#FFF6CF" stop-opacity="1"/><stop offset=".35" stop-color="#FFE29A" stop-opacity=".55"/><stop offset="1" stop-color="#FFE29A" stop-opacity="0"/></radialGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B6FA8"/><stop offset=".5" stop-color="#1F3F6E"/><stop offset="1" stop-color="#16294B"/></linearGradient>
+    <linearGradient id="roof" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B8663A"/><stop offset="1" stop-color="#8A4727"/></linearGradient>
+    <pattern id="win" width="14" height="18" patternUnits="userSpaceOnUse"><rect width="14" height="18" fill="none"/><rect x="3" y="4" width="7" height="9" fill="#F7F3E8" opacity=".55"/></pattern>
+  </defs>
+  <rect width="1600" height="760" fill="url(#sky)"/>
+  <circle cx="1290" cy="120" r="320" fill="url(#glow)"/>
+  <circle cx="1290" cy="120" r="46" fill="#FFF3C4"/>
+  <!-- Mount Lebanon -->
+  <path d="M0 470 L120 360 L230 430 L360 320 L520 450 L640 390 L760 470 L760 560 L0 560Z" fill="#9CC3DC" opacity=".85"/>
+  <path d="M0 500 L150 410 L280 480 L420 400 L600 500 L700 450 L760 520 L760 560 L0 560Z" fill="#7FAFCB" opacity=".9"/>
+  <!-- skyline -->
+  <g fill="#D9C9B4">
+    <rect x="40" y="420" width="70" height="170"/><rect x="120" y="380" width="60" height="210"/><rect x="190" y="440" width="80" height="150"/>
+    <rect x="285" y="350" width="64" height="240"/><rect x="360" y="410" width="90" height="180"/><rect x="465" y="370" width="58" height="220"/>
+    <rect x="535" y="430" width="84" height="160"/><rect x="632" y="395" width="66" height="195"/><rect x="710" y="450" width="70" height="140"/>
+  </g>
+  <g fill="url(#win)">
+    <rect x="40" y="420" width="70" height="170"/><rect x="120" y="380" width="60" height="210"/><rect x="190" y="440" width="80" height="150"/>
+    <rect x="285" y="350" width="64" height="240"/><rect x="360" y="410" width="90" height="180"/><rect x="465" y="370" width="58" height="220"/>
+    <rect x="535" y="430" width="84" height="160"/><rect x="632" y="395" width="66" height="195"/><rect x="710" y="450" width="70" height="140"/>
+  </g>
+  <!-- sea -->
+  <rect y="560" width="1600" height="200" fill="url(#sea)"/>
+  <path d="M0 585 Q200 575 400 585 T800 585 T1200 585 T1600 585" stroke="#fff" stroke-opacity=".35" stroke-width="3" fill="none"/>
+  <path d="M0 625 Q250 612 500 625 T1000 625 T1600 625" stroke="#fff" stroke-opacity=".25" stroke-width="3" fill="none"/>
+  <path d="M0 675 Q300 662 600 675 T1200 675 T1600 675" stroke="#fff" stroke-opacity=".18" stroke-width="3" fill="none"/>
+  <!-- house with solar roof (right) -->
+  <polygon points="1000,760 1000,610 1600,520 1600,760" fill="#E9DCC6"/>
+  <polygon points="1000,610 1600,520 1600,560 1000,650" fill="#CDBBA0"/>
+  <polygon points="930,505 1600,330 1600,545 960,640" fill="url(#roof)"/>
+  <g>
+    <polygon points="1010,505 1600,352 1600,520 1030,592" fill="#0F203F"/>
+    <g fill="url(#panel)" stroke="#9FC0E6" stroke-width="2">
+      <polygon points="1030,500 1170,463 1186,540 1046,568"/><polygon points="1184,459 1324,423 1338,502 1200,536"/>
+      <polygon points="1338,419 1478,383 1490,464 1352,498"/><polygon points="1492,380 1600,352 1600,436 1504,460"/>
+      <polygon points="1048,575 1188,546 1204,614 1062,640"/><polygon points="1202,543 1340,510 1354,578 1218,611"/>
+      <polygon points="1356,507 1496,472 1508,540 1370,575"/><polygon points="1510,469 1600,446 1600,512 1522,536"/>
+    </g>
+    <g stroke="#9FC0E6" stroke-width="1" opacity=".55">
+      <line x1="1100" y1="481" x2="1116" y2="554"/><line x1="1254" y1="441" x2="1269" y2="519"/><line x1="1408" y1="401" x2="1421" y2="481"/>
+      <line x1="1118" y1="560" x2="1133" y2="628"/><line x1="1272" y1="527" x2="1286" y2="595"/><line x1="1426" y1="490" x2="1439" y2="558"/>
+    </g>
+    <polygon points="1030,500 1170,463 1176,478 1036,516" fill="#fff" opacity=".28"/>
+    <polygon points="1184,459 1324,423 1330,438 1190,475" fill="#fff" opacity=".28"/>
+  </g>
+</svg>

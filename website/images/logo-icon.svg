@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="CedarSun Energy logo">
+  <defs>
+    <linearGradient id="sunG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC247"/><stop offset="1" stop-color="#F08A1C"/></linearGradient>
+    <linearGradient id="treeG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A6BB5"/><stop offset="1" stop-color="#173F73"/></linearGradient>
+  </defs>
+  <g stroke="url(#sunG)" stroke-width="5" stroke-linecap="round">
+    <line x1="74" y1="8" x2="74" y2="16"/><line x1="104" y1="20" x2="98" y2="26"/><line x1="116" y1="48" x2="108" y2="48"/>
+    <line x1="104" y1="76" x2="98" y2="70"/><line x1="48" y1="20" x2="54" y2="26"/><line x1="74" y1="88" x2="74" y2="80"/>
+  </g>
+  <circle cx="74" cy="48" r="23" fill="url(#sunG)"/>
+  <g fill="url(#treeG)">
+    <rect x="35" y="86" width="8" height="26" rx="2"/>
+    <ellipse cx="39" cy="92" rx="31" ry="7.5"/>
+    <ellipse cx="39" cy="78" rx="27" ry="7.5"/>
+    <ellipse cx="39" cy="64" rx="22" ry="7"/>
+    <ellipse cx="39" cy="51" rx="17" ry="6.5"/>
+    <ellipse cx="39" cy="39" rx="12" ry="6"/>
+    <ellipse cx="39" cy="28" rx="7" ry="5.5"/>
+    <path d="M36 14 Q39 6 42 14 Z"/>
+  </g>
+  <g fill="none" stroke="#fff" stroke-width="1.4" opacity=".35" stroke-linecap="round">
+    <path d="M18 92 Q39 97 60 92"/><path d="M22 78 Q39 83 56 78"/><path d="M26 64 Q39 68 52 64"/>
+  </g>
+</svg>

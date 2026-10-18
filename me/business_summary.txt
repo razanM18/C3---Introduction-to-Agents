@@ -1,0 +1,28 @@
+CEDARSUN ENERGY - BUSINESS SUMMARY
+(CedarSun Energy is a fictional company created for a university assignment.)
+
+WHO WE ARE
+CedarSun Energy S.A.L. is a Lebanese residential solar company founded in 2019 and based in Sin el Fil, Beirut. We design, install and support rooftop solar panels, hybrid inverters and lithium (LFP) batteries for homes, villas and apartments. We serve Beirut, Mount Lebanon (Metn, Keserwan, Baabda, Aley, Chouf), Jbeil, Batroun, Tripoli, Saida and Zahle. We do not install commercial or industrial systems. About 30 staff, more than 380 residential systems installed. Open Monday to Friday 08:00-17:00 and Saturday 09:00-13:00. Contact: hello@cedarsun-energy.example, +961 1 000 000 (fictional). Support line for system faults: support@cedarsun-energy.example | +961 1 000 111 (fictional).
+
+MISSION AND WHAT MAKES US DIFFERENT
+Our mission is to give Lebanese households reliable, understandable electricity from the sun, so power cuts and generator dependence disrupt daily life less. Our difference is honest, engineer-led sizing plus live monitoring: every customer gets a free, no-obligation site survey, a written load analysis showing how the design was calculated, and the CedarSun Home app (live generation, consumption, battery level and fault alerts).
+
+SERVICES
+Free consultation and site survey; load analysis and system design; installation and commissioning; battery storage; monitoring and monthly reports; maintenance and panel cleaning; upgrades to existing CedarSun systems.
+
+TEAM
+Karim Haddad, co-founder and CEO (electrical engineer, 15 years in power systems and renewables). Layal Nassar, co-founder and Head of Engineering (electrical and computer engineer, built our sizing method and monitoring platform). Rami Khoury, Head of Installations (licensed electrician, 12 years). Dana Mansour, Customer Experience Manager (surveys, follow-up and after-sales support).
+
+ILLUSTRATIVE PACKAGES (starting points only, final design after the site survey)
+- Essential Backup: 4 panels (1.8 kWp), 3 kW hybrid inverter, 5.12 kWh battery. Lighting, fridge, TV, internet, fans. Not for air conditioners.
+- Smart Home Hybrid: 8 panels (3.6 kWp), 5 kW hybrid inverter, 10.24 kWh battery. Essentials plus one air conditioner for part of the day.
+- High-Demand Home: 14 panels (6.3 kWp), 8 kW hybrid inverter, 15.36 kWh battery. Larger homes with several air conditioners.
+- Custom Design: villas, electric water heating, cooking loads or unusual roofs; engineer design required.
+
+SIZING METHOD (rough estimates only - use the estimate_system_size tool, never do the arithmetic yourself)
+Daily energy kWh = sum(watts x hours) / 1000. Array kW = daily kWh / (sun hours x 0.80). Panels = array kW / 0.45 (450 W panels), rounded up. Battery nominal kWh = energy to store / (0.90 x 0.90), in 5.12 kWh modules; if the customer gives no backup target, plan the battery for 40 percent of daily energy. Inverter: assume 70 percent of connected appliance power runs at once, choose the smallest of 3, 5 or 8 kW that covers it, at least 5 kW if an air conditioner is included; above 8 kW is a Custom Design for an engineer.
+Planning sun hours: coast (Beirut, Jbeil, Batroun, Tripoli, Saida) 5.0; Mount Lebanon 5.2; Bekaa (Zahle) 5.5; unknown area 5.0.
+Always call results approximate and subject to the free site survey. Estimates ignore shading, roof orientation, season and dust.
+
+POLICIES
+Warranty: panels 12 years product and 25 years performance; inverter 10 years; battery 10 years; CedarSun workmanship 5 years. Timelines (estimates, not guarantees): specialist calls within 1 business day; site survey usually within 5 business days; quotation within 3 business days after the survey; installation typically 1-3 days once approved. Payment: usually a deposit on approval and the balance at commissioning; no loans or installment plans. We do NOT publish prices: every price is a written quotation in US dollars after the site survey. Never quote or estimate prices, discounts, savings or payback. Never give legal, regulatory, grid-export or net-metering, tax or insurance information (log those questions instead). Never give electrical repair or installation instructions.
