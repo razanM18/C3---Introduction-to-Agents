@@ -158,13 +158,17 @@ def provider_keys(cfg):
 
 def _endpoints():
     """The main provider first, then the fallbacks, each expanded to one endpoint per key."""
-    seen, out = set(), []
+    seen, same_key, out = set(), set(), []
     pairs = [(PROVIDER, MODEL)] + [(n, m or PROVIDERS[n]["default_model"]) for n, m in FALLBACKS]
     for name, model in pairs:
         for idx, key in enumerate(provider_keys(PROVIDERS[name])):
             ep = Endpoint(name, model, idx, key)
-            if ep.id not in seen:
+            # The same key on the same model and server counts once, however many provider names list it
+            # (for example the old gemini2 / gemini3 names next to the pool's own GEMINI_API_KEY_2 / _3).
+            identity = (PROVIDERS[name]["base_url"], key, model)
+            if ep.id not in seen and identity not in same_key:
                 seen.add(ep.id)
+                same_key.add(identity)
                 out.append(ep)
     return out
 
@@ -1251,12 +1255,12 @@ p.sub {margin:0 0 6px; color: var(--cs-muted) !important; font-size:.95rem;}
 """
 # Compact layout used only inside the website's chat window (an iframe about 400 x 560 px).
 EMBED_CSS = """
-html, body {overflow: hidden !important;}
+html, body {overflow-x: hidden !important; overflow-y: auto !important;}   /* the landing page scrolls; the chat screen fits the window */
 .gradio-container {padding: 4px 8px !important; min-height: 0 !important; max-width: 100% !important;}
 footer {display: none !important;}
 .progress-text, .meta-text, .meta-text-center, .eta-bar {display: none !important;}
 #chatwrap {border-radius: 10px;}
-#zchat, #zchat .wrapper, #zchat .bubble-wrap {height: calc(100vh - 215px) !important; max-height: calc(100vh - 215px) !important;}
+#zchat, #zchat .wrapper, #zchat .bubble-wrap {height: calc(100vh - 290px) !important; max-height: calc(100vh - 290px) !important;}
 #zchat .message-row {max-width: 100% !important; overflow: hidden !important;}
 #zchat .message, #zchat .message * {font-size: 14px !important; line-height: 1.4 !important;}
 #zchat .message {max-width: 100% !important; width: auto !important; overflow-wrap: break-word !important; box-sizing: border-box !important;}
